@@ -1,0 +1,68 @@
+{
+  "@id": "dtmi:local:wioterminal_aziot_dodien;5",
+  "@type": "Interface",
+  "@context": "dtmi:dtdl:context;2",
+  "displayName": "Seeed Wio Terminal",
+  "contents": [
+    {
+      "@type": "Telemetry",
+      "name": "v",
+      "displayName": "Voltage(V)",
+      "schema": "double"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "c",
+      "displayName": "Current(A)",
+      "schema": "double"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "p",
+      "displayName": "Power(W)",
+      "schema": "double"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "e",
+      "displayName": "Energy(kWh)",
+      "schema": "double"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "f",
+      "displayName": "Frequency(Hz)",
+      "schema": "double"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "pf",
+      "displayName": "Power Factor",
+      "schema": "double"
+    },
+    {
+      "@type": "Command",
+      "name": "ringBuzzer",
+      "displayName": {
+        "en": "Ring buzzer",
+        "ja": "ブザーを鳴らす"
+      },
+      "description": {
+        "en": "Beep the buzzer for specified duration.",
+        "ja": "指定された期間、ブザー音を鳴らします。"
+      },
+      "request": {
+        "name": "duration",
+        "displayName": {
+          "en": "Duration",
+          "ja": "期間"
+        },
+        "description": {
+          "en": "Buzzer duration (milliseconds)",
+          "ja": "ブザーを鳴らす期間（単位はミリ秒）"
+        },
+        "schema": "integer"
+      }
+    }
+  ]
+}

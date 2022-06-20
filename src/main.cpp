@@ -44,8 +44,15 @@ int pwd[3] = {1, 2, 3}; // khai bao mat khau
 int currentpwd[3] = {0, 0, 0};
 int checkpwd = 0;
 
-double a, b, s;           // Khai bao bien do nang luong
-double v, c, p, e, f, pf; // Khai bao bien do cua Pzem
+char dataStr[100] = "";
+char buffer[7];
+
+int yea, mon, da, hou, minu, sec;// bien hien thi thoi gian
+float a,b,s; // Khai bao bien do nang luong
+float v,c,p,e,f,pf; // Khai bao bien do cua Pzem
+float v_SD = 0,c_SD = 0,p_SD = 0,f_SD = 0,pf_SD = 0, m = 0; // khai bao bien luu gia tri do duoc vao the nho
+
+
 
 unsigned long startMillisPZEM;
 unsigned long currentMillisPZEM;
@@ -56,7 +63,6 @@ void Screen1();
 void Screen2();
 void Screen3();
 void Screen4();
-void Screen5();
 void checkPassword();
 
 const char *ROOT_CA_BALTIMORE =
@@ -140,7 +146,7 @@ static void Log(const char *format, ...)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Display
-
+// 
 static void DisplayPrintf(const char *format, ...)
 {
     va_list arg;
@@ -318,17 +324,17 @@ static az_result SendTelemetry()
     AZ_RETURN_IF_FAILED(az_json_writer_init(&json_builder, AZ_SPAN_FROM_BUFFER(telemetry_payload), NULL));
     AZ_RETURN_IF_FAILED(az_json_writer_append_begin_object(&json_builder));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("v")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, v, 1));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,v, 1));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("c")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, c, 3));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,c, 3));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("p")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, p, 3));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,p, 3));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("e")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, e, 3));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,e, 3));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("f")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, f, 1));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,f, 1));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("pf")));
-    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder, pf, 2));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,pf, 2));
     AZ_RETURN_IF_FAILED(az_json_writer_append_end_object(&json_builder));
     const az_span out_payload{az_json_writer_get_bytes_used_in_destination(&json_builder)};
 
@@ -462,7 +468,7 @@ void setup()
     Serial.begin(115200);
 
     pinMode(WIO_BUZZER, OUTPUT);
-    pinMode(WIO_5S_DOWN, INPUT);
+    pinMode(WIO_5S_DOWN, INPUT_PULLUP);
     pinMode(WIO_5S_UP, INPUT_PULLUP);
     pinMode(WIO_5S_RIGHT, INPUT_PULLUP);
     pinMode(WIO_5S_LEFT, INPUT_PULLUP);
@@ -474,7 +480,6 @@ void setup()
     pinMode(WIO_KEY_A, INPUT_PULLUP);
     pinMode(WIO_KEY_B, INPUT_PULLUP);
     pinMode(WIO_KEY_C, INPUT_PULLUP);
-    delay(100);
 
     if (digitalRead(WIO_KEY_A) == LOW &&
         digitalRead(WIO_KEY_B) == LOW &&
@@ -495,10 +500,15 @@ void setup()
         delay(500);
     } while (WiFi.status() != WL_CONNECTED);
     DisplayPrintf("Connected");
+    analogWrite(WIO_BUZZER, 128);
+    delay(500);
+    analogWrite(WIO_BUZZER, 0);
+
 
     ////////////////////
     // Sync time server
-
+    ntp.ruleDST("CEST", Last, Sun, Mar, 2, 420); // last sunday in march 2:00, timetone +120min (+1 GMT + 1h summertime offset)
+    ntp.ruleSTD("CET", Last, Sun, Oct, 3, 60); // last sunday in october 3:00, timezone +60min (+1 GMT)
     ntp.begin();
 
     ////////////////////
@@ -506,15 +516,17 @@ void setup()
     // LCD setup
     tft.begin();
     tft.setRotation(3);
-    spr.createSprite(TFT_HEIGHT, TFT_WIDTH);
+    tft.fillScreen(TFT_WHITE);
+
 
     //Pzem setup
     pzem.begin(&uart);
     pzem.setAddress(0x42);
 
+    //pzemtimẻ
     startMillisPZEM = millis();
 
- 
+  
     // Provisioning
 
 #if defined(USE_CLI) || defined(USE_DPS)
@@ -534,13 +546,15 @@ void setup()
 
 void loop()
 {
-    spr.fillRect(0,0,320,240,TFT_WHITE);
+    //time
+    ntp.update();
 
+    //pzem
     readDataPZEM();
   
     if(digitalRead(WIO_KEY_C) == LOW){
         page = page + 1; 
-        if(page == 5){
+        if(page == 4){
           page = 1;
         }
         delay(500);
@@ -550,20 +564,20 @@ void loop()
     Screen1();
     }
     if(page == 2){
-    Screen2();  
+    Screen2(); 
     }
     if(page == 3){
-    Screen3();
+        Screen3();
     }
-    if(page == 4){
-    Screen4();
-    }
+    // if(page == 4){
+    // Screen4();
+    // }
     //  if(page == 5){
     //    Screen5();
     //  }
 
     //alarmPower();
-    spr.pushSprite(0,0);
+    
 
     static uint64_t reconnectTime;
     if (!mqtt_client.connected())
@@ -579,6 +593,15 @@ void loop()
         }
 
         DisplayPrintf("> SUCCESS.");
+
+        analogWrite(WIO_BUZZER, 128);
+        delay(500);
+        analogWrite(WIO_BUZZER, 0);
+        delay(100);
+        analogWrite(WIO_BUZZER, 128);
+        delay(500);
+        analogWrite(WIO_BUZZER, 0);
+
         reconnectTime = now + TOKEN_LIFESPAN * 0.85;
     }
     else
@@ -600,98 +623,108 @@ void loop()
         }
 
     }
+
 }
 
 void readDataPZEM(){
-  currentMillisPZEM = millis();
-  if(currentMillisPZEM - startMillisPZEM >= delayPZEM){
-    v  = pzem.voltage();
-    c  = pzem.current();
-    p  = pzem.power();
-    e  = pzem.energy();
-    f  = pzem.frequency();
-    pf = pzem.pf();
-    startMillisPZEM = currentMillisPZEM;
-  }
+    currentMillisPZEM = millis();
+    if ((currentMillisPZEM - startMillisPZEM) >= 1000){
+        v  = pzem.voltage();
+        c  = pzem.current();
+        p  = pzem.power();
+        e  = pzem.energy();
+        f  = pzem.frequency();
+        pf = pzem.pf();
+        startMillisPZEM = currentMillisPZEM;
+    }
+
 }
 
 void Screen1(){
+
+  //time
+    spr.createSprite(320, 60);
+    spr.fillSprite(TFT_WHITE);
+
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(2);
+    spr.drawCentreString(ntp.formattedTime("%c"),160, 0, 1);
+
+    spr.pushSprite(0,0);
+    spr.deleteSprite();  
+  //voltage
+  spr.createSprite(320, 60);
+  spr.fillSprite(TFT_WHITE);
   spr.setTextColor(TFT_BLACK);
   spr.setTextSize(1);
-  spr.drawFloat(p,1,90,45,7);
-  spr.drawFloat(e,3,80,120,7);
-  spr.setTextSize(2);
-  spr.drawString("W",280,65);
-  spr.drawString("kWh",280,140);
-  spr.drawCentreString("Tien dien: ",45,200,1);
-  if(e<50){spr.drawFloat(e*1678,3,130,200);}
-  if((e>=50)&&(e<100)){spr.drawFloat((e-50)*1734 + 83900,3,130,200);}
-  if((e>=100)&&(e<200)){spr.drawFloat((e-100)*2014 + 257300,3,130,200);}
-  if((e>=200)&&(e<300)){spr.drawFloat((e-200)*2536 + 458700,3,130,200);}
-  if((e>=300)&&(e<400)){spr.drawFloat((e-300)*2834 + 712300,3,130,200);}
-  if(e>+400){spr.drawFloat((e-400)*2927 + 995700,3,130,200);}
+  spr.drawFloat(v,1,0,0,7);
+  spr.pushSprite(0,60);
+  spr.deleteSprite();
+
+  //current
+  spr.createSprite(320, 60);
+  spr.fillSprite(TFT_WHITE);
+  spr.setTextColor(TFT_BLACK);
+  spr.setTextSize(1);
+  spr.drawFloat(c,3,0,0,7);
+  spr.pushSprite(0,120);
+  spr.deleteSprite();
+
+  //energy
+  spr.createSprite(320, 60);
+  spr.fillSprite(TFT_WHITE);
+  spr.setTextColor(TFT_BLACK);
+  spr.setTextSize(1);
+  spr.drawFloat(e,3,0,0,7);
+  spr.pushSprite(0,180);
+  spr.deleteSprite();
 }
 
 void Screen2(){
+  //power
+  spr.createSprite(320, 80);
+  spr.fillSprite(TFT_WHITE);
   spr.setTextColor(TFT_BLACK);
   spr.setTextSize(1);
-  spr.drawFloat(v,1,180-spr.textWidth("000.0",7),45,7);
-  spr.drawFloat(c,3,180-spr.textWidth("0.000",7),150,7);
-  spr.drawFloat(f,1,200,45,7);
-  spr.drawFloat(pf,2,200,150,7);
-  spr.setTextSize(2);
-  spr.drawString("V",165,105);
-  spr.drawString("A",165,205);
-  spr.drawString("Hz",290,105);
-  spr.drawString("PF",290,205);
-   
+  spr.drawFloat(p,1,0,0,7);
+  spr.pushSprite(0,0);
+  spr.deleteSprite();
+
+  //frequency
+  spr.createSprite(320, 80);
+  spr.fillSprite(TFT_WHITE);
+  spr.setTextColor(TFT_BLACK);
+  spr.setTextSize(1);
+  spr.drawFloat(f,1,0,0,7);
+  spr.pushSprite(0,80);
+  spr.deleteSprite();
+
+  //power factor
+  spr.createSprite(320, 80);
+  spr.fillSprite(TFT_WHITE);
+  spr.setTextColor(TFT_BLACK);
+  spr.setTextSize(1);
+  spr.drawFloat(pf,2,0,0,7);
+  spr.pushSprite(0,160);
+  spr.deleteSprite();
+  
 }
 
 void Screen3(){
-    spr.setTextColor(TFT_BLACK);
-    spr.setTextSize(2);
-    spr.drawString("1.Start",15,50);
-    spr.drawString("2. Energy",15,100);
-    spr.drawString("3. Used Energy",15,150);
-    spr.drawCentreString("STOP WATCH",160,210,1);
-    
-    if(digitalRead(WIO_KEY_B) == LOW){
-      delay(500);
-      dem = dem + 1;
-    }
-    if(dem == 5){
-      dem = 0;
-      a = 0;
-      s = 0;
-    }
-    if(dem == 1){
-      a = e;
-      dem = dem + 1;
-    }
-    if(dem == 3){
-       b = e;
-       s = b - a;
-       dem = dem + 1;
-    }
-    
-    spr.setTextSize(3);
-    spr.setTextColor(TFT_BLACK);
-    spr.drawFloat(a,3,50,70);
-    spr.drawFloat(e,3,50,120);
-    spr.drawFloat(s,3,50,170);
-}
-
-void Screen4(){
     //spr.setTextSize(2);
-    spr.setTextColor(TFT_BLACK);
+
+
+
+    tft.fillScreen(TFT_WHITE);
+    tft.setTextColor(TFT_BLACK);
 
     // ve cac hinh tam giac
-    spr.drawTriangle(50,110,75,85,100,110,TFT_RED);
-    spr.drawTriangle(135,110,160,85,185,110,TFT_RED);
-    spr.drawTriangle(220,110,245,85,270,110,TFT_RED);
-    spr.drawTriangle(50,180,75,205,100,180,TFT_RED);
-    spr.drawTriangle(135,180,160,205,185,180,TFT_RED);
-    spr.drawTriangle(220,180,245,205,270,180,TFT_RED);
+    tft.drawTriangle(50,110,75,85,100,110,TFT_RED);
+    tft.drawTriangle(135,110,160,85,185,110,TFT_RED);
+    tft.drawTriangle(220,110,245,85,270,110,TFT_RED);
+    tft.drawTriangle(50,180,75,205,100,180,TFT_RED);
+    tft.drawTriangle(135,180,160,205,185,180,TFT_RED);
+    tft.drawTriangle(220,180,245,205,270,180,TFT_RED);
 
     // kiem tra nut phai co bam hay khong?
     if(digitalRead(WIO_5S_RIGHT) == LOW)
@@ -753,32 +786,36 @@ void Screen4(){
     switch (i)
     {
     case 0:
-      spr.fillTriangle(50,110,75,85,100,110,TFT_RED);
-      spr.fillTriangle(50,180,75,205,100,180,TFT_RED);
+      tft.fillTriangle(50,110,75,85,100,110,TFT_RED);
+      tft.fillTriangle(50,180,75,205,100,180,TFT_RED);
       break;
     case 1:
-      spr.fillTriangle(135,110,160,85,185,110,TFT_RED);
-      spr.fillTriangle(135,180,160,205,185,180,TFT_RED);
+      tft.fillTriangle(135,110,160,85,185,110,TFT_RED);
+      tft.fillTriangle(135,180,160,205,185,180,TFT_RED);
       break;
     case 2:
-      spr.fillTriangle(220,110,245,85,270,110,TFT_RED);
-      spr.fillTriangle(220,180,245,205,270,180,TFT_RED);
+      tft.fillTriangle(220,110,245,85,270,110,TFT_RED);
+      tft.fillTriangle(220,180,245,205,270,180,TFT_RED);
       break;
     }
 
     //hien thi test_password 
-    spr.setTextSize(1);
-    spr.setTextColor(TFT_BLACK);
-    spr.drawString(String(currentpwd[0]),60,120,7);
-    spr.drawString(String(currentpwd[1]),145,120,7);
-    spr.drawString(String(currentpwd[2]),225,120,7);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_BLACK);
+    tft.drawString(String(currentpwd[0]),60,120,7);
+    tft.drawString(String(currentpwd[1]),145,120,7);
+    tft.drawString(String(currentpwd[2]),225,120,7);
 
 
     // spr.drawCentreString("PRESS BUTTON B TO",160,85,1);
     // spr.drawCentreString("RESET ENERGY",160,135,1);
     // spr.drawCentreString("kWh",160,170,1);
-    spr.setTextSize(3);
-    spr.drawFloat(e,3,120,50);
+    //tft.setTextSize(3);
+
+
+    //tft.drawFloat(e,3,120,50);
+
+
     //Reset Energy
 //    if(digitalRead(WIO_KEY_B) == LOW){
 //      delay(20);
@@ -798,17 +835,17 @@ void checkPassword()
   }
   if(checkpwd == 3)
   {
-    spr.setTextSize(3);
-    spr.setTextColor(TFT_BLUE);
-    spr.drawCentreString("Right Password", 160, 225,1);
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_BLUE);
+    tft.drawCentreString("Right Password", 160, 225,1);
     pzem.resetEnergy();
     
   }
   else 
   {
-    spr.setTextSize(3);
-    spr.setTextColor(TFT_RED);
-    spr.drawCentreString("Wrong Password", 160, 225,1);
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_RED);
+    tft.drawCentreString("Wrong Password", 160, 225,1);
   }
   checkpwd = 0;
   

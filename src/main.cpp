@@ -44,6 +44,8 @@ int pwd[3] = {1, 2, 3}; // khai bao mat khau
 int currentpwd[3] = {0, 0, 0};
 int checkpwd = 0;
 
+int giatien;
+
 char dataStr[100] = "";
 char buffer[7];
 
@@ -381,16 +383,82 @@ static void HandleCommandMessage(az_span payload, az_iot_hub_client_method_reque
                 }
             }
 
-            // Invoke command
-            analogWrite(WIO_BUZZER, 128);
-            delay(duration);
-            analogWrite(WIO_BUZZER, 0);
-
-            int rc;
-            if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("{}"))))
+            //Nhận các keys
+            // keys có đuôi là 1 thì hiển thị giá tiền điện : 5000001 tương đương 500.000 VND
+            if(duration%10 == 1)
             {
-                Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+                giatien = duration/10;
+                int rc;
+                if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("1"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+                }
             }
+
+            // key có đuôi là 2 đổi mật khẩu : 3 chữ mk mới+ 3 số mk cũ + 2
+            if(duration%10 == 2)
+            {
+                int pw,check;
+                int pw_buf[6];
+                pw = duration/10;
+                for(int i = 5;i >= 0; i--)
+                {
+                    pw_buf[i] = pw%10;
+                    pw = pw/10;
+                }
+                for (int k = 2; k >=0; k--)
+                {
+                    if(pw_buf[k+3] == pwd[k])
+                    {
+                        check += 1;
+                    }
+                }
+
+                //  đúng mk cũ thì cho reset mk
+                if(check == 3)
+                {
+                    for(int n = 2; n >= 0 ; n--)
+                    {
+                        pwd[n] = pw_buf[n];
+                    }
+                    int rc;
+                    if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("21"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+                    }
+                }
+                else // nếu sai thì báo sai mk
+                {
+                    int rc;
+                    if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("20"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+                    }
+
+                }
+
+                check = 0;
+            }
+            // reset năng lượng
+            if(duration%10 == 3)
+            {
+                int rc;
+                if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("3"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+                }
+            }
+
+            // Invoke command
+            // analogWrite(WIO_BUZZER, 128);
+            // delay(duration);
+            // analogWrite(WIO_BUZZER, 0);
+            // // dự đoán chỗ này là đoạn code gửi dữ liệu response
+            // int rc;
+            // if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("1"))))
+            // {
+            //     Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+            // }
         }
     }
     else
@@ -656,8 +724,8 @@ void Screen1(){
   spr.createSprite(320, 60);
   spr.fillSprite(TFT_WHITE);
   spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(v,1,0,0,7);
+  spr.setTextSize(3);
+  spr.drawNumber(giatien,0,0);
   spr.pushSprite(0,60);
   spr.deleteSprite();
 
@@ -710,22 +778,9 @@ void Screen2(){
   
 }
 
+
+
 void Screen3(){
-    //spr.setTextSize(2);
-
-
-
-    tft.fillScreen(TFT_WHITE);
-    tft.setTextColor(TFT_BLACK);
-
-    // ve cac hinh tam giac
-    tft.drawTriangle(50,110,75,85,100,110,TFT_RED);
-    tft.drawTriangle(135,110,160,85,185,110,TFT_RED);
-    tft.drawTriangle(220,110,245,85,270,110,TFT_RED);
-    tft.drawTriangle(50,180,75,205,100,180,TFT_RED);
-    tft.drawTriangle(135,180,160,205,185,180,TFT_RED);
-    tft.drawTriangle(220,180,245,205,270,180,TFT_RED);
-
     // kiem tra nut phai co bam hay khong?
     if(digitalRead(WIO_5S_RIGHT) == LOW)
     {
@@ -773,56 +828,78 @@ void Screen3(){
       checkPassword();
     }
 
-//    if(digitalRead(WIO_KEY_B) == LOW)
-//    {
-//      delay(200);
-//      spr.setTextSize(3);
-//      spr.setTextColor(TFT_BLACK);
-//      spr.drawCentreString("Setup Password", 160, 60,1);
-//
-//    }
 
-// to mau cho mui ten o 1 chu so cua password
-    switch (i)
+
+// vung spr tieu de
+
+  spr.createSprite(320, 40);
+  spr.fillSprite(TFT_GREEN);
+  spr.setTextColor(TFT_WHITE);
+  spr.setTextSize(3);
+  spr.drawCentreString("Reset Energy",160,5,1);
+  spr.pushSprite(0,0);
+  spr.deleteSprite();
+
+
+
+  //vung spr cua hien thi password
+  spr.createSprite(220, 130);
+  spr.fillSprite(TFT_WHITE);
+  spr.setTextColor(TFT_BLACK);
+
+      //  ve cac hinh tam giac
+  spr.drawTriangle(0,30,25,5,50,30,TFT_RED);
+  spr.drawTriangle(85,30,110,5,135,30,TFT_RED);
+  spr.drawTriangle(170,30,195,5,220,30,TFT_RED);
+  spr.drawTriangle(0,100,25,125,50,100,TFT_RED);
+  spr.drawTriangle(85,100,110,125,135,100,TFT_RED);
+  spr.drawTriangle(170,100,195,125,220,100,TFT_RED);
+
+      // to mau cho mui ten o 1 chu so cua password
+  switch (i)
     {
     case 0:
-      tft.fillTriangle(50,110,75,85,100,110,TFT_RED);
-      tft.fillTriangle(50,180,75,205,100,180,TFT_RED);
+      spr.fillTriangle(0,30,25,5,50,30,TFT_RED);
+      spr.fillTriangle(0,100,25,125,50,100,TFT_RED);
       break;
     case 1:
-      tft.fillTriangle(135,110,160,85,185,110,TFT_RED);
-      tft.fillTriangle(135,180,160,205,185,180,TFT_RED);
+      spr.fillTriangle(85,30,110,5,135,30,TFT_RED);
+      spr.fillTriangle(85,100,110,125,135,100,TFT_RED);
       break;
     case 2:
-      tft.fillTriangle(220,110,245,85,270,110,TFT_RED);
-      tft.fillTriangle(220,180,245,205,270,180,TFT_RED);
+      spr.fillTriangle(170,30,195,5,220,30,TFT_RED);
+      spr.fillTriangle(170,100,195,125,220,100,TFT_RED);
       break;
     }
 
-    //hien thi test_password 
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(currentpwd[0]),60,120,7);
-    tft.drawString(String(currentpwd[1]),145,120,7);
-    tft.drawString(String(currentpwd[2]),225,120,7);
+
+  
 
 
-    // spr.drawCentreString("PRESS BUTTON B TO",160,85,1);
-    // spr.drawCentreString("RESET ENERGY",160,135,1);
-    // spr.drawCentreString("kWh",160,170,1);
-    //tft.setTextSize(3);
+    spr.setTextSize(1);
+    spr.setTextColor(TFT_BLACK);
+    spr.drawString(String(currentpwd[0]),10,40,7);
+    spr.drawString(String(currentpwd[1]),95,40,7);
+    spr.drawString(String(currentpwd[2]),175,40,7);
+  
+
+    spr.pushSprite(0,40);
+    spr.deleteSprite();
 
 
-    //tft.drawFloat(e,3,120,50);
+
+  // vung spr cua hien thi nang luong va dung/sai password
+    spr.createSprite(320, 70);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(e,3,0,0,7);
+    spr.pushSprite(0,170);
+    spr.deleteSprite();
 
 
-    //Reset Energy
-//    if(digitalRead(WIO_KEY_B) == LOW){
-//      delay(20);
-//      pzem.resetEnergy();
-//      
-//    }
 }
+
 
 void checkPassword()
 {
@@ -850,3 +927,4 @@ void checkPassword()
   checkpwd = 0;
   
 }
+

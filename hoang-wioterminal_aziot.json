@@ -1,5 +1,5 @@
 {
-  "@id": "dtmi:local:wioterminal_aziot_dodien;5",
+  "@id": "dtmi:local:wioterminal_iot_dodien;1",
   "@type": "Interface",
   "@context": "dtmi:dtdl:context;2",
   "displayName": "Seeed Wio Terminal",
@@ -43,24 +43,12 @@
     {
       "@type": "Command",
       "name": "ringBuzzer",
-      "displayName": {
-        "en": "Ring buzzer",
-        "ja": "ブザーを鳴らす"
-      },
-      "description": {
-        "en": "Beep the buzzer for specified duration.",
-        "ja": "指定された期間、ブザー音を鳴らします。"
-      },
+      "displayName":  "Ring buzzer",
+      "description":"Beep the buzzer for specified duration.", 
       "request": {
         "name": "duration",
-        "displayName": {
-          "en": "Duration",
-          "ja": "期間"
-        },
-        "description": {
-          "en": "Buzzer duration (milliseconds)",
-          "ja": "ブザーを鳴らす期間（単位はミリ秒）"
-        },
+        "displayName": "Duration",
+        "description": "Buzzer duration (milliseconds)",
         "schema": "integer"
       }
     }

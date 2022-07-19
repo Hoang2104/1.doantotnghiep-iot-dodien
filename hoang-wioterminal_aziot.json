@@ -41,14 +41,24 @@
       "schema": "double"
     },
     {
+      "@type": "Telemetry",
+      "name": "pw",
+      "displayName": "Power Warning",
+      "schema": "integer"
+    },
+    {
+      "@type": "Telemetry",
+      "name": "giatien",
+      "displayName": "Price",
+      "schema": "integer"
+    },
+    {
       "@type": "Command",
-      "name": "ringBuzzer",
-      "displayName":  "Ring buzzer",
-      "description":"Beep the buzzer for specified duration.", 
+      "name": "response",
+      "displayName":  "Response",
       "request": {
         "name": "duration",
         "displayName": "Duration",
-        "description": "Buzzer duration (milliseconds)",
         "schema": "integer"
       }
     }

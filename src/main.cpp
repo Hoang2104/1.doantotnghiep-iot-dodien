@@ -9,6 +9,13 @@
 #include "TFT_eSPI.h" //TFT LCD library
 #include "SPI.h"
 
+//thư viện SD card
+#include <SPI.h>
+#include <Seeed_FS.h>
+#include "SD/Seeed_SD.h"
+
+
+
 #include <PZEM004Tv30.h>
 #include <Free_Fonts.h>
 #include <Seeed_FS.h>
@@ -35,24 +42,42 @@ TFT_eSprite spr = TFT_eSprite(&tft); // Initializing buffer
 
 PZEM004Tv30 pzem;
 
-int page = 1; // Khai bao so trang hien thi
-int dem;
+File myFile;
 
-int i = 0; // la bien dem mac dinh cho thu tu chu so trong password
-int k = 0;
-int pwd[3] = {1, 2, 3}; // khai bao mat khau
-int currentpwd[3] = {0, 0, 0};
-int checkpwd = 0;
+uint8_t page = 1; // Khai bao so trang hien thi
+uint8_t dem = 0;
+
+// int i = 0; // la bien dem mac dinh cho thu tu chu so trong password
+// int k = 0;
+// khai bao mat khau
+int currentpwd[3] = {0,0,0};
+
+
+uint16_t check_pwd_web;
+uint16_t check_pwd_local;
+uint16_t pwd_local;
+
+uint32_t checkpwd;
+
+
 
 int giatien;
 
 char dataStr[100] = "";
-char buffer[7];
+char buf[] = ""; // cho powerwarning
 
-int yea, mon, da, hou, minu, sec;// bien hien thi thoi gian
+char buf1[] = ""; // cho thay đỔi mk
+char buf2[] = "";
+
+char buf_price[3] = "";//cho cập nhật giá điện
+char buf_data_price[] = "";
+char buf_cal_price[] = "";
+uint32_t level1, level2, level3, level4, level5, level6;
+
 float a,b,s; // Khai bao bien do nang luong
 float v,c,p,e,f,pf; // Khai bao bien do cua Pzem
-float v_SD = 0,c_SD = 0,p_SD = 0,f_SD = 0,pf_SD = 0, m = 0; // khai bao bien luu gia tri do duoc vao the nho
+uint32_t pw ;// Khai báo biến cảnh báo công suất
+
 
 
 
@@ -337,6 +362,10 @@ static az_result SendTelemetry()
     AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,f, 1));
     AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("pf")));
     AZ_RETURN_IF_FAILED(az_json_writer_append_double(&json_builder,pf, 2));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("pw")));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_int32(&json_builder,pw));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_property_name(&json_builder, AZ_SPAN_LITERAL_FROM_STR("giatien")));
+    AZ_RETURN_IF_FAILED(az_json_writer_append_int32(&json_builder,giatien));
     AZ_RETURN_IF_FAILED(az_json_writer_append_end_object(&json_builder));
     const az_span out_payload{az_json_writer_get_bytes_used_in_destination(&json_builder)};
 
@@ -358,8 +387,9 @@ static void HandleCommandMessage(az_span payload, az_iot_hub_client_method_reque
 {
     int command_res_code = 200;
     az_result rc = AZ_OK;
+    int j;
 
-    if (az_span_is_content_equal(AZ_SPAN_LITERAL_FROM_STR(COMMAND_RING_BUZZER), command_request->name))
+    if (az_span_is_content_equal(AZ_SPAN_LITERAL_FROM_STR(COMMAND_RESPONSE), command_request->name))
     {
         // Parse the command payload (it contains a 'duration' field)
         Log("Processing command 'ringBuzzer'" DLM);
@@ -382,83 +412,147 @@ static void HandleCommandMessage(az_span payload, az_iot_hub_client_method_reque
                     Log("Duration: %dms" DLM, duration);
                 }
             }
-
             //Nhận các keys
             // keys có đuôi là 1 thì hiển thị giá tiền điện : 5000001 tương đương 500.000 VND
-            if(duration%10 == 1)
+
+            j = duration%10;
+            duration = duration/10;
+
+            switch (j)
             {
-                giatien = duration/10;
-                int rc;
-                if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("1"))))
-                {
-                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
+            case 1: // thay đổi mật khẩu
+                uint32_t pwd_new,pwd_old;
+                pwd_old = duration%1000;
+                pwd_new = duration/1000;
+                myFile = SD.open("password.txt",FILE_READ);
+                myFile.read(buf2,6);
+                myFile.close();
+                checkpwd = atoi(buf2);
+                
+                if(checkpwd == pwd_old){
+                    myFile = SD.open("password.txt",FILE_WRITE);
+                    itoa(pwd_new, buf1, 10);
+                    myFile.println(buf1);
+                    myFile.close();
+
+                    int rc11;
+                    if (az_result_failed(rc11 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc11);
+                    }
+                }else{
+                    int rc10;
+                    if (az_result_failed(rc10 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("400"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc10);
+                    }
                 }
+                break;
+            case 2: // reset năng lượng
+                myFile = SD.open("password.txt",FILE_READ);
+                myFile.read(buf2,6);
+                myFile.close();
+                check_pwd_web = atoi(buf2);
+                if(check_pwd_web == duration){
+                    pzem.resetEnergy();
+                    int rc21;
+                    if (az_result_failed(rc21 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc21);
+                    }
+                } else{
+                    int rc20;
+                    if (az_result_failed(rc20 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("400"))))
+                    {
+                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc20);
+                    }
+                }
+                break;
+            case 3://thiết lập công suất cảnh báo
+
+                myFile = SD.open("powerwarning.txt", FILE_WRITE);
+                itoa(duration, buf, 10);
+                myFile.println(buf);
+                myFile.close();
+
+
+                int rc3;
+                if (az_result_failed(rc3 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc3);
+                }
+                break;
+            case 4:// cập nhật mức giá bậc 1
+                myFile = SD.open("pricelevel1.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc4;
+                if (az_result_failed(rc4 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc4);
+                }
+                break;
+            case 5:// cập nhật mức giá bậc 2
+                myFile = SD.open("pricelevel2.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc5;
+                if (az_result_failed(rc5 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc5);
+                }
+                break;
+            case 6:// cập nhật mức giá bậc 3
+                myFile = SD.open("pricelevel3.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc6;
+                if (az_result_failed(rc6 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc6);
+                }
+                break;
+            case 7:// cập nhật mức giá bậc 4
+                myFile = SD.open("pricelevel4.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc7;
+                if (az_result_failed(rc7 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc7);
+                }
+                break;
+            case 8:// cập nhật mức giá bậc 5
+                myFile = SD.open("pricelevel5.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc8;
+                if (az_result_failed(rc8 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("200"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc8);
+                }
+                break;
+            case 9:// cập nhật mức giá bậc 6
+                myFile = SD.open("pricelevel6.txt",FILE_WRITE);
+                itoa(duration, buf_price, 10);
+                myFile.println(buf_price);
+                myFile.close();
+                int rc9;
+                if (az_result_failed(rc9 = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("4"))))
+                {
+                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc9);
+                }
+                break;
+            
+
             }
 
-            // key có đuôi là 2 đổi mật khẩu : 3 chữ mk mới+ 3 số mk cũ + 2
-            if(duration%10 == 2)
-            {
-                int pw,check;
-                int pw_buf[6];
-                pw = duration/10;
-                for(int i = 5;i >= 0; i--)
-                {
-                    pw_buf[i] = pw%10;
-                    pw = pw/10;
-                }
-                for (int k = 2; k >=0; k--)
-                {
-                    if(pw_buf[k+3] == pwd[k])
-                    {
-                        check += 1;
-                    }
-                }
 
-                //  đúng mk cũ thì cho reset mk
-                if(check == 3)
-                {
-                    for(int n = 2; n >= 0 ; n--)
-                    {
-                        pwd[n] = pw_buf[n];
-                    }
-                    int rc;
-                    if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("21"))))
-                    {
-                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
-                    }
-                }
-                else // nếu sai thì báo sai mk
-                {
-                    int rc;
-                    if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("20"))))
-                    {
-                        Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
-                    }
-
-                }
-
-                check = 0;
-            }
-            // reset năng lượng
-            if(duration%10 == 3)
-            {
-                int rc;
-                if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("3"))))
-                {
-                    Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
-                }
-            }
-
-            // Invoke command
-            // analogWrite(WIO_BUZZER, 128);
-            // delay(duration);
-            // analogWrite(WIO_BUZZER, 0);
-            // // dự đoán chỗ này là đoạn code gửi dữ liệu response
-            // int rc;
-            // if (az_result_failed(rc = SendCommandResponse(command_request, command_res_code, AZ_SPAN_LITERAL_FROM_STR("1"))))
-            // {
-            //     Log("Unable to send %d response, status 0x%08x" DLM, command_res_code, rc);
-            // }
         }
     }
     else
@@ -525,6 +619,11 @@ static void MqttSubscribeCallbackHub(char *topic, byte *payload, unsigned int le
 
 void setup()
 {
+
+  SD.begin(SDCARD_SS_PIN, SDCARD_SPI);
+
+
+
     ////////////////////
     // Load storage
 
@@ -594,7 +693,7 @@ void setup()
     //pzemtimẻ
     startMillisPZEM = millis();
 
-  
+
     // Provisioning
 
 #if defined(USE_CLI) || defined(USE_DPS)
@@ -635,8 +734,58 @@ void loop()
     Screen2(); 
     }
     if(page == 3){
-        Screen3();
+    Screen3();
     }
+
+    myFile = SD.open("powerwarning.txt",FILE_READ);
+    myFile.read(buf,6);
+    pw = atoi(buf);
+    myFile.close();
+
+    myFile = SD.open("pricelevel1.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level1 = atoi(buf_cal_price);
+    myFile.close();
+    
+
+    myFile = SD.open("pricelevel2.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level2 = atoi(buf_cal_price);
+    myFile.close();
+    
+
+    myFile = SD.open("pricelevel3.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level3 = atoi(buf_cal_price);
+    myFile.close();
+    
+
+    myFile = SD.open("pricelevel4.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level4 = atoi(buf_cal_price);
+    myFile.close();
+    
+
+    myFile = SD.open("pricelevel5.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level5 = atoi(buf_cal_price);
+    myFile.close();
+    
+
+    myFile = SD.open("pricelevel6.txt", FILE_READ);
+    myFile.read(buf_cal_price,6);
+    level6 = atoi(buf_cal_price);
+    myFile.close();   
+    
+
+    if(e<=50){giatien = e*level1;}
+    if((e>50)&&(e<=100)){giatien = 50*level1 + (e - 50)*level2;}
+    if((e>100)&&(e<=200)){giatien = 50*level1 + 50*level2 + (e - 100)*level3;}
+    if((e>200)&&(e<=300)){giatien = 50*level1 + 50*level2 + 100*level3 + (e - 200)*level4;}
+    if((e>300)&&(e<=400)){giatien = 50*level1 + 50*level2 + 100*level3 + 100*level4 + (e - 300)*level5;}
+    if(e>400){giatien = 50*level1 + 50*level2 + 100*level3 + 100*level4 + 100*level5 + (e - 400)*level6;}
+
+
     // if(page == 4){
     // Screen4();
     // }
@@ -696,7 +845,7 @@ void loop()
 
 void readDataPZEM(){
     currentMillisPZEM = millis();
-    if ((currentMillisPZEM - startMillisPZEM) >= 1000){
+    if ((currentMillisPZEM - startMillisPZEM) >= 3000){
         v  = pzem.voltage();
         c  = pzem.current();
         p  = pzem.power();
@@ -711,71 +860,175 @@ void readDataPZEM(){
 void Screen1(){
 
   //time
-    spr.createSprite(320, 60);
-    spr.fillSprite(TFT_WHITE);
+    if(p <= pw){
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_GREEN);
 
+        spr.setTextColor(TFT_WHITE);
+        spr.setTextSize(2);
+        spr.drawCentreString(ntp.formattedTime("%c"),160, 10, 1);
+
+        spr.pushSprite(0,0);
+        spr.deleteSprite(); 
+    }
+    else{
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_RED);
+        spr.setTextColor(TFT_BLACK);
+        spr.setTextSize(3);
+        spr.drawCentreString("Power Warning",160, 5, 1);
+
+        spr.pushSprite(0,0);
+        spr.deleteSprite();  
+    }
+    //power
+    spr.createSprite(280, 70);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(p,1,50,15,7);
+    spr.pushSprite(0,40);
+    spr.deleteSprite();
+
+    spr.createSprite(50, 70);
+    spr.fillSprite(TFT_WHITE);
     spr.setTextColor(TFT_BLACK);
     spr.setTextSize(2);
-    spr.drawCentreString(ntp.formattedTime("%c"),160, 0, 1);
+    spr.drawString("W",0,40);
+    spr.pushSprite(280,40);
+    spr.deleteSprite();   
 
-    spr.pushSprite(0,0);
-    spr.deleteSprite();  
-  //voltage
-  spr.createSprite(320, 60);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(3);
-  spr.drawNumber(giatien,0,0);
-  spr.pushSprite(0,60);
-  spr.deleteSprite();
 
-  //current
-  spr.createSprite(320, 60);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(c,3,0,0,7);
-  spr.pushSprite(0,120);
-  spr.deleteSprite();
 
-  //energy
-  spr.createSprite(320, 60);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(e,3,0,0,7);
-  spr.pushSprite(0,180);
-  spr.deleteSprite();
+    //energy
+    spr.createSprite(280, 70);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(e, 3, 50, 15,7);
+    spr.pushSprite(0,110);
+    spr.deleteSprite();
+
+    spr.createSprite(50, 70);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(2);
+    spr.drawString("kWh",0,40);
+    spr.pushSprite(280,110);
+    spr.deleteSprite(); 
+
+    // Price
+    spr.createSprite(120, 60);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(2);
+    spr.drawString("Tien dien:",5,30);
+    spr.pushSprite(0,180);
+    spr.deleteSprite();
+
+    spr.createSprite(160, 60);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(3);
+    spr.drawNumber(giatien,5, 30);
+    spr.pushSprite(120,180);
+    spr.deleteSprite();
+
+    spr.createSprite(40, 60);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(2);
+    spr.drawString("VND",0,30);
+    spr.pushSprite(280,180);
+    spr.deleteSprite(); 
 }
 
 void Screen2(){
-  //power
-  spr.createSprite(320, 80);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(p,1,0,0,7);
-  spr.pushSprite(0,0);
-  spr.deleteSprite();
 
-  //frequency
-  spr.createSprite(320, 80);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(f,1,0,0,7);
-  spr.pushSprite(0,80);
-  spr.deleteSprite();
+      //time
+    if(p <= pw){
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_GREEN);
 
-  //power factor
-  spr.createSprite(320, 80);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-  spr.setTextSize(1);
-  spr.drawFloat(pf,2,0,0,7);
-  spr.pushSprite(0,160);
-  spr.deleteSprite();
-  
+        spr.setTextColor(TFT_WHITE);
+        spr.setTextSize(2);
+        spr.drawCentreString(ntp.formattedTime("%c"),160, 10, 1);
+
+        spr.pushSprite(0,0);
+        spr.deleteSprite(); 
+    }
+    else{
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_RED);
+        spr.setTextColor(TFT_BLACK);
+        spr.setTextSize(3);
+        spr.drawCentreString("Power Warning",160, 5, 1);
+
+        spr.pushSprite(0,0);
+        spr.deleteSprite();  
+    }
+    
+
+    //voltage
+    spr.createSprite(200, 80);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(v, 1, 15,20, 7);
+    spr.pushSprite(0,40);
+    spr.deleteSprite();
+
+    spr.createSprite(200, 20);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(3);
+    spr.drawString("V", 130,0);
+    spr.pushSprite(0,120);
+    spr.deleteSprite();    
+
+    //current
+    spr.createSprite(200, 75);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(c, 3, 15, 20, 7);
+    spr.pushSprite(0,140);
+    spr.deleteSprite();
+
+    spr.createSprite(200, 25);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(3);
+    spr.drawString("A", 130,0);
+    spr.pushSprite(0,215);
+    spr.deleteSprite();
+
+    //frequency
+    spr.createSprite(120, 80);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(f,1,5,20,7);
+    spr.pushSprite(200,40);
+    spr.deleteSprite();
+
+    spr.createSprite(120, 20);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(3);
+    spr.drawString("Hz", 70, 0);
+    spr.pushSprite(200,120);
+    spr.deleteSprite();
+
+    //power factor
+    spr.createSprite(120, 100);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+    spr.setTextSize(1);
+    spr.drawFloat(pf,2,5,20,7);
+    spr.pushSprite(200,140);
+    spr.deleteSprite();
+
 }
 
 
@@ -785,41 +1038,29 @@ void Screen3(){
     if(digitalRead(WIO_5S_RIGHT) == LOW)
     {
       delay(200);
-      i++;
-      if(i == 3)
-      {
-        i = 0;
-      }
+      dem++;
+      if(dem == 3){dem = 0;}
     }
 // Kiem tra nut trai co bam hay khong
     if(digitalRead(WIO_5S_LEFT) == LOW)
     {
       delay(200);
-      i--;
-      if(i < 0)
-      {
-        i = 2;
-      }
+      dem--;
+      if(dem < 0){dem = 2;}
     }
 // kiem tra nut len co bam hay khong
     if(digitalRead(WIO_5S_UP) == LOW)
     {
       delay(200);
-      currentpwd[i] += + 1;
-      if(currentpwd[i] == 10)
-      {
-        currentpwd[i] = 0;
-      }
+      currentpwd[dem] += + 1;
+      if(currentpwd[dem] == 10){currentpwd[dem] = 0;}
     }
 // kiem tra nut xuong co bam hay khong
     if(digitalRead(WIO_5S_DOWN) == LOW)
     {
       delay(200);
-      currentpwd[i] = currentpwd[i] - 1;
-      if(currentpwd[i] < 0 )
-       {
-        currentpwd[i] = 9;
-      }
+      currentpwd[dem] = currentpwd[dem] - 1;
+      if(currentpwd[dem] < 0 ){currentpwd[dem] = 9;}
     }
 // kiem tra nut giua co bam hay khong
     if(digitalRead(WIO_5S_PRESS) == LOW)
@@ -828,72 +1069,76 @@ void Screen3(){
       checkPassword();
     }
 
-
-
 // vung spr tieu de
 
-  spr.createSprite(320, 40);
-  spr.fillSprite(TFT_GREEN);
-  spr.setTextColor(TFT_WHITE);
-  spr.setTextSize(3);
-  spr.drawCentreString("Reset Energy",160,5,1);
-  spr.pushSprite(0,0);
-  spr.deleteSprite();
-
-
-
-  //vung spr cua hien thi password
-  spr.createSprite(220, 130);
-  spr.fillSprite(TFT_WHITE);
-  spr.setTextColor(TFT_BLACK);
-
-      //  ve cac hinh tam giac
-  spr.drawTriangle(0,30,25,5,50,30,TFT_RED);
-  spr.drawTriangle(85,30,110,5,135,30,TFT_RED);
-  spr.drawTriangle(170,30,195,5,220,30,TFT_RED);
-  spr.drawTriangle(0,100,25,125,50,100,TFT_RED);
-  spr.drawTriangle(85,100,110,125,135,100,TFT_RED);
-  spr.drawTriangle(170,100,195,125,220,100,TFT_RED);
-
-      // to mau cho mui ten o 1 chu so cua password
-  switch (i)
-    {
-    case 0:
-      spr.fillTriangle(0,30,25,5,50,30,TFT_RED);
-      spr.fillTriangle(0,100,25,125,50,100,TFT_RED);
-      break;
-    case 1:
-      spr.fillTriangle(85,30,110,5,135,30,TFT_RED);
-      spr.fillTriangle(85,100,110,125,135,100,TFT_RED);
-      break;
-    case 2:
-      spr.fillTriangle(170,30,195,5,220,30,TFT_RED);
-      spr.fillTriangle(170,100,195,125,220,100,TFT_RED);
-      break;
-    }
-
-
-  
-
-
-    spr.setTextSize(1);
-    spr.setTextColor(TFT_BLACK);
-    spr.drawString(String(currentpwd[0]),10,40,7);
-    spr.drawString(String(currentpwd[1]),95,40,7);
-    spr.drawString(String(currentpwd[2]),175,40,7);
-  
-
-    spr.pushSprite(0,40);
+    spr.createSprite(320, 40);
+    spr.fillSprite(TFT_GREEN);
+    spr.setTextColor(TFT_WHITE);
+    spr.setTextSize(3);
+    spr.drawCentreString("Reset Energy",160,5,1);
+    spr.pushSprite(0,0);
     spr.deleteSprite();
 
 
 
-  // vung spr cua hien thi nang luong va dung/sai password
+    //vung spr cua hien thi password
+
+    spr.createSprite(50, 130);
+    spr.fillSprite(TFT_WHITE);
+    spr.pushSprite(0,40);
+    spr.deleteSprite();
+
+    spr.createSprite(40, 130);
+    spr.fillSprite(TFT_WHITE);
+    spr.pushSprite(280,40);
+    spr.deleteSprite();
+
+    spr.createSprite(230, 130);
+    spr.fillSprite(TFT_WHITE);
+    spr.setTextColor(TFT_BLACK);
+
+    //  ve cac hinh tam giac
+    spr.drawTriangle(5,30,30,5,55,30,TFT_RED);
+    spr.drawTriangle(90,30,115,5,140,30,TFT_RED);
+    spr.drawTriangle(175,30,200,5,225,30,TFT_RED);
+    spr.drawTriangle(5,100,30,125,55,100,TFT_RED);
+    spr.drawTriangle(90,100,115,125,140,100,TFT_RED);
+    spr.drawTriangle(175,100,200,125,225,100,TFT_RED);
+
+      // to mau cho mui ten o 1 chu so cua password
+    switch (dem)
+        {
+        case 0:
+        spr.fillTriangle(5,30,30,5,55,30,TFT_RED);
+        spr.fillTriangle(5,100,30,125,55,100,TFT_RED);
+        break;
+        case 1:
+        spr.fillTriangle(90,30,115,5,140,30,TFT_RED);
+        spr.fillTriangle(90,100,115,125,140,100,TFT_RED);
+        break;
+        case 2:
+        spr.fillTriangle(175,30,200,5,225,30,TFT_RED);
+        spr.fillTriangle(175,100,200,125,225,100,TFT_RED);
+        break;
+        }
+
+    spr.setTextSize(1);
+    spr.setTextColor(TFT_BLACK);
+    spr.drawString(String(currentpwd[0]),15,40,7);
+    spr.drawString(String(currentpwd[1]),100,40,7);
+    spr.drawString(String(currentpwd[2]),185,40,7);
+  
+    spr.pushSprite(50,40);
+    spr.deleteSprite();
+
+
+
+  // vung spr cua hien thi nang luong 
     spr.createSprite(320, 70);
     spr.fillSprite(TFT_WHITE);
     spr.setTextColor(TFT_BLACK);
     spr.setTextSize(1);
-    spr.drawFloat(e,3,0,0,7);
+    spr.drawFloat(e,3,80,20,7);
     spr.pushSprite(0,170);
     spr.deleteSprite();
 
@@ -903,28 +1148,42 @@ void Screen3(){
 
 void checkPassword()
 {
-  for (int j = 0; j < 3; j++)
-  {
-    if(currentpwd[i] == pwd[i])
+    myFile = SD.open("password.txt",FILE_READ);
+    myFile.read(buf2,6);
+    myFile.close();
+    check_pwd_local = atoi(buf2);
+
+    pwd_local = currentpwd[2] + currentpwd[1]*10 + currentpwd[0]*100;
+
+
+    if(check_pwd_local == pwd_local)
     {
-      checkpwd += 1;
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_BLUE);
+
+        spr.setTextColor(TFT_WHITE);
+        spr.setTextSize(3);
+        spr.drawCentreString("Reset Energy",160, 5, 1);
+
+        spr.pushSprite(0,0);
+        delay(300);
+        spr.deleteSprite(); 
+        pzem.resetEnergy();
+        
     }
-  }
-  if(checkpwd == 3)
-  {
-    tft.setTextSize(3);
-    tft.setTextColor(TFT_BLUE);
-    tft.drawCentreString("Right Password", 160, 225,1);
-    pzem.resetEnergy();
-    
-  }
-  else 
-  {
-    tft.setTextSize(3);
-    tft.setTextColor(TFT_RED);
-    tft.drawCentreString("Wrong Password", 160, 225,1);
-  }
-  checkpwd = 0;
+    else 
+    {
+        spr.createSprite(320, 40);
+        spr.fillSprite(TFT_RED);
+
+        spr.setTextColor(TFT_WHITE);
+        spr.setTextSize(3);
+        spr.drawCentreString("Reset Energy",160, 5, 1);
+
+        spr.pushSprite(0,0);
+        delay(300);
+        spr.deleteSprite(); 
+    }
   
 }
 

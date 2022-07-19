@@ -38,7 +38,7 @@
 
 #define TOKEN_LIFESPAN                      3600
 
-#define TELEMETRY_FREQUENCY_MILLISECS		2000
+#define TELEMETRY_FREQUENCY_MILLISECS		3000
 #define TELEMETRY_ACCEL_X					"accelX"
 #define TELEMETRY_ACCEL_Y					"accelY"
 #define TELEMETRY_ACCEL_Z					"accelZ"
@@ -46,4 +46,4 @@
 #define TELEMETRY_RIGHT_BUTTON              "rightButton"
 #define TELEMETRY_CENTER_BUTTON             "centerButton"
 #define TELEMETRY_LEFT_BUTTON               "leftButton"
-#define COMMAND_RING_BUZZER					"ringBuzzer"
+#define COMMAND_RESPONSE					"response"
